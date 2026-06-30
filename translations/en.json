@@ -1,0 +1,96 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "CenSys Gate Remote",
+        "description": "Enter the mobile number registered with the MyCentsys Remote app. A one-time PIN will be sent to it.",
+        "data": {
+          "mobile_number": "Mobile number (e.g. +27831234567)",
+          "name": "Your name (optional)",
+          "email": "Email (optional)"
+        }
+      },
+      "otp": {
+        "title": "Enter the OTP",
+        "description": "Enter the one-time PIN that was just sent to your phone.",
+        "data": {
+          "otp": "One-time PIN"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the CenSys backend.",
+      "invalid_otp": "That OTP was not accepted. Please try again.",
+      "otp_not_sent": "The backend did not send an OTP. Check the number and try again."
+    },
+    "abort": {
+      "already_configured": "This mobile number is already configured."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "online": { "name": "Online" },
+      "fault": { "name": "Fault" },
+      "warranty_void": { "name": "Warranty void" }
+    },
+    "sensor": {
+      "operator_status": {
+        "name": "Operator status",
+        "state": {
+          "unknown": "Unknown",
+          "open": "Open",
+          "closed": "Closed",
+          "partly_open": "Partly open",
+          "partly_closed": "Partly closed",
+          "opening": "Opening",
+          "closing": "Closing"
+        }
+      },
+      "theft_alarm_state": {
+        "name": "Theft alarm state",
+        "state": {
+          "activated": "Activated",
+          "cleared": "Cleared",
+          "disabled": "Disabled"
+        }
+      },
+      "power_supply_status": {
+        "name": "Power supply",
+        "state": {
+          "normal": "Normal",
+          "low": "Low",
+          "off": "Off (on battery)",
+          "unknown": "Unknown"
+        }
+      },
+      "closing_beam": {
+        "name": "Closing safety beam",
+        "state": {
+          "disabled": "Disabled",
+          "idle": "Idle",
+          "clear": "Clear",
+          "obstructed": "Obstructed",
+          "not_connected": "Not connected",
+          "wiring_error": "Wiring error",
+          "sleep": "Sleep"
+        }
+      },
+      "opening_beam": {
+        "name": "Opening safety beam",
+        "state": {
+          "disabled": "Disabled",
+          "idle": "Idle",
+          "clear": "Clear",
+          "obstructed": "Obstructed",
+          "not_connected": "Not connected",
+          "wiring_error": "Wiring error",
+          "sleep": "Sleep"
+        }
+      },
+      "last_seen": { "name": "Last seen" },
+      "wifi_rssi": { "name": "Wi-Fi signal" },
+      "battery_voltage": { "name": "Battery voltage" },
+      "operator_temperature": { "name": "Operator temperature" }
+    }
+  }
+}
