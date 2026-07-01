@@ -449,8 +449,9 @@ class CentsysRemoteClient:
 
         Body is a pipe-joined string of base64 fields:
             base64("-1") | base64(gweb_token) | base64(onesignal_id) | base64("production")
-        Returns the parsed response (a list of buttons, or a message string such
-        as "No Buttons for this number").
+        Returns the parsed response: a ``Root`` config object (dict with
+        ``DeviceConfigs``) for accounts with devices, or a message string such
+        as "No Buttons for this number".
         """
         if not self._gweb_token:
             await self.fetch_gweb_token()
@@ -473,7 +474,19 @@ class CentsysRemoteClient:
             content_type="text/plain; charset=utf-8",
             accept="*/*",
         )
-        return self._parse_json(text)
+        # The body is double-encoded: a JSON string whose content is itself the
+        # JSON config object. _parse_json unwraps one level (-> a string); if
+        # that string is itself JSON, decode it again to get the config dict.
+        # A plain message like "No Buttons for this number" stays a string.
+        parsed = self._parse_json(text)
+        if isinstance(parsed, str):
+            inner = parsed.strip()
+            if inner[:1] in ("{", "["):
+                try:
+                    return json.loads(inner)
+                except (json.JSONDecodeError, ValueError):
+                    return parsed
+        return parsed
 
     async def get_gsm_config(self) -> list[GsmDevice]:
         """List legacy GSM/ULTRA operators from the GWeb config (MCRConfEnV3).
