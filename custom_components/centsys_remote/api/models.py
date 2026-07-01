@@ -158,14 +158,16 @@ class GsmDevice:
         )
 
 
-# A gate-feedback IO reports its position as a single-character state id. The
-# app maps these characters to gate positions (see IoStateToDescriptionMapper).
-GSM_GATE_STATES: dict[str, str] = {
-    "0": "opening",
-    "1": "open",
-    "2": "closing",
-    "3": "closed",
-    "4": "running",  # moving, direction unknown
+# AppIOStatesEN reports each IO's state as an integer that is the ASCII code of
+# the app's single-char state id. Codes 49-52 ('1'-'4') are unambiguous gate
+# positions. Code 48 ('0', "opening") is intentionally excluded: it is also the
+# idle value of unconfigured (NA) IOs, so a real "opening" can't be told apart
+# from an idle slot. Outputs use the 88-99 range, so 49-52 mean a feedback IO.
+GSM_GATE_STATES: dict[int, str] = {
+    49: "open",
+    50: "closing",
+    51: "closed",
+    52: "running",  # moving, direction unknown
 }
 
 
@@ -186,11 +188,15 @@ class GsmStatus:
 
     @property
     def gate_state(self) -> str | None:
-        """Gate position ('open'/'closed'/'opening'/...) if a feedback IO reports it."""
+        """Gate position ('open'/'closed'/'closing'/...) if a feedback IO reports it."""
         if not self.online:
             return None
         for state in self.io_states:
-            label = GSM_GATE_STATES.get(str(state))
+            try:
+                code = int(state)
+            except (TypeError, ValueError):
+                continue
+            label = GSM_GATE_STATES.get(code)
             if label is not None:
                 return label
         return None
