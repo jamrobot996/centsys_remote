@@ -106,6 +106,9 @@
       "gsm_device_number": { "name": "Device number" },
       "gsm_call_tokens": { "name": "Call tokens remaining" },
       "gsm_sms_tokens": { "name": "SMS tokens remaining" }
+    },
+    "button": {
+      "gsm_refresh_airtime": { "name": "Refresh airtime" }
     }
   }
 }

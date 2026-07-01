@@ -29,6 +29,12 @@ TELEMETRY_SCAN_INTERVAL = 900
 # cadence than the main cloud status to avoid extra round-trips every poll.
 GSM_SCAN_INTERVAL = 300
 
-PLATFORMS = ["binary_sensor", "cover", "sensor"]
+# After an on-demand airtime request, the operator queries its balance over the
+# cellular network and syncs back asynchronously, so poll the cached status a
+# few times to pick up the result.
+AIRTIME_POLL_INTERVAL = 8
+AIRTIME_POLL_ATTEMPTS = 12
+
+PLATFORMS = ["binary_sensor", "button", "cover", "sensor"]
 
 MANUFACTURER = "Centurion Systems (CenSys)"

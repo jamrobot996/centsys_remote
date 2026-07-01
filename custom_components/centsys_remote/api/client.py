@@ -620,6 +620,36 @@ class CentsysRemoteClient:
             return None
         return GsmDeviceStatus.from_json(device_id, data)
 
+    async def request_gsm_airtime(self, device_id: int | str) -> str:
+        """Queue a network-balance (airtime) refresh for a GSM/ULTRA device.
+
+        Unlike :meth:`get_gsm_status` (a cached read), this asks the operator to
+        query its balance over the cellular network, so it has a real cost and
+        must only ever be triggered on demand. The balance itself arrives
+        asynchronously and is read back later via :meth:`get_gsm_status`.
+
+        Mirrors the app's ``RequestAirtime``: an ``MCRStatus`` call with the
+        access-token JWT as param 2 and the mode flag ``"3"`` (vs ``"1"`` for a
+        cached read). Returns the gateway's status message and raises on a known
+        failure state.
+        """
+        token = self._require_token()
+        parts = "|".join(
+            base64.b64encode(str(v).encode()).decode()
+            for v in (device_id, token, "3")
+        )
+        url = URL(f"{const.GWEB_BASE}{const.EP_GWEB_STATUS}?data={parts}", encoded=True)
+        _, text = await self._request("GET", url, op="MCRStatus(airtime)", accept="*/*")
+        result = text.replace("\\", "").strip().strip('"')
+
+        if result == "Status Queued Successfully":
+            return result
+        if result == "Device is Offline":
+            raise CentsysError("GSM device is offline")
+        if result == "Config Required":
+            raise CentsysError("Config required; refresh the device configuration")
+        raise CentsysApiError(f"Airtime request failed: {result!r}", status=200, body=text)
+
     async def get_backup(self) -> Any:
         """Fetch the user's latest app backup from the GWeb ``RemotesAppBackup``
         store (``smart.gweb.co.za``).

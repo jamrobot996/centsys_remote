@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -17,6 +18,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .api import CentsysRemoteClient
 from .api.exceptions import CentsysAuthError, CentsysError
 from .const import (
+    AIRTIME_POLL_ATTEMPTS,
+    AIRTIME_POLL_INTERVAL,
     CONF_MOBILE_NUMBER,
     CONF_TOKEN,
     DEFAULT_SCAN_INTERVAL,
@@ -264,6 +267,36 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 continue
             if diag is not None:
                 self._gsm_diag[gsm.key] = diag
+
+    def async_schedule_airtime_refresh(self, key: str, device_id: int | str) -> None:
+        """Poll the cached diagnostics after an on-demand airtime request.
+
+        The operator answers the balance query over the cellular network a
+        little while after it is queued, so this runs in the background and
+        refreshes the diagnostics a few times until the tokens appear (or the
+        attempts run out), pushing each update to the entities.
+        """
+        self.hass.async_create_background_task(
+            self._poll_airtime(key, device_id), name=f"{DOMAIN}_airtime_{key}"
+        )
+
+    async def _poll_airtime(self, key: str, device_id: int | str) -> None:
+        for _ in range(AIRTIME_POLL_ATTEMPTS):
+            await asyncio.sleep(AIRTIME_POLL_INTERVAL)
+            try:
+                diag = await self.client.get_gsm_status(device_id)
+            except Exception as err:  # noqa: BLE001 - best-effort follow-up poll
+                _LOGGER.debug("Airtime follow-up fetch failed for %s: %s", device_id, err)
+                continue
+            if diag is None:
+                continue
+            self._gsm_diag[key] = diag
+            self._last_gsm_diag = time.monotonic()
+            if self.data and key in self.data:
+                self.data[key]["diag"] = diag
+            self.async_update_listeners()
+            if diag.call_tokens is not None or diag.sms_tokens is not None:
+                return
 
     async def _maybe_refresh_telemetry(self, devices: list[Any]) -> None:
         """Refresh cached MQTT telemetry for Wi-Fi operators, best-effort.

@@ -209,8 +209,8 @@ GSM_SENSORS: tuple[CentsysSensorDescription, ...] = (
         entity_registry_enabled_default=False,
         value_fn=_diag("number"),
     ),
-    # Airtime tokens only populate after an in-app balance refresh, so they are
-    # usually empty on a normal read -> opt-in.
+    # Airtime tokens only populate after a balance refresh (the "Refresh
+    # airtime" button), and only on prepaid SIMs, so they are opt-in.
     CentsysSensorDescription(
         key="gsm_call_tokens",
         translation_key="gsm_call_tokens",
