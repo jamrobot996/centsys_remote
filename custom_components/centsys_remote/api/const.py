@@ -57,6 +57,7 @@ EP_GET_CERTIFICATE = "/GetCertificate"
 
 EP_GWEB_OTP_NUMB = "/api/MCROTPNumb"     # exchanges gweb blob -> gweb session token
 EP_GWEB_CONFIG = "/api/MCRConfEnV3"      # fetch configured buttons
+EP_GWEB_ACTIVATE = "/api/MCRActEn"       # trigger a GSM/legacy button (?data=...)
 EP_GWEB_MUTE_STATUS = "/api/MCRMuteStatus"
 EP_GWEB_ADD_USER = "/api/AddOrUpdateRemotesUserUpdated/"          # smart.gweb
 EP_GWEB_BACKUP_META = "/api/RemotesAppBackup/GetLatestRemotesAppBackupMetaData"  # smart.gweb

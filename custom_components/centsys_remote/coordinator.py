@@ -21,6 +21,7 @@ from .const import (
     CONF_TOKEN,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    GSM_SCAN_INTERVAL,
     TELEMETRY_SCAN_INTERVAL,
 )
 
@@ -54,6 +55,9 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._last_telemetry = 0.0
         self._no_devices_notice = f"{DOMAIN}_no_devices_{entry.entry_id}"
         self._backup_diagnostic_done = False
+        self._gsm_devices: list[Any] = []
+        self._gsm_loaded = False
+        self._last_gsm = 0.0
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         try:
@@ -70,14 +74,11 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             raise UpdateFailed(str(err)) from err
 
         await self._maybe_refresh_telemetry(devices)
+        await self._maybe_refresh_gsm()
 
-        if not serials:
-            await self._log_backup_diagnostic()
-
-        self._update_no_devices_notice(bool(serials))
-
-        return {
+        data: dict[str, dict[str, Any]] = {
             d.serial_number: {
+                "kind": "wifi",
                 "device": d,
                 "status": statuses.get(d.serial_number),
                 "overview": self._overview.get(d.serial_number),
@@ -85,6 +86,15 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             for d in devices
             if d.serial_number
         }
+        for gsm in self._gsm_devices:
+            data[gsm.key] = {"kind": "gsm", "gsm_device": gsm}
+
+        has_devices = bool(data)
+        if not has_devices:
+            await self._log_backup_diagnostic()
+        self._update_no_devices_notice(has_devices)
+
+        return data
 
     def dismiss_no_devices_notice(self) -> None:
         """Clear the 'no gates linked' notification (e.g. on unload)."""
@@ -183,6 +193,23 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             count,
         )
         _LOGGER.debug("GWeb app backup for this number: %s", backup)
+
+    async def _maybe_refresh_gsm(self) -> None:
+        """Refresh the legacy GSM/ULTRA device list, best-effort.
+
+        Rate-limited to ``GSM_SCAN_INTERVAL``; the cached list is reused between
+        refreshes and a failure keeps the previous value. Wi-Fi-only accounts
+        simply get an empty list here.
+        """
+        now = time.monotonic()
+        if self._gsm_loaded and (now - self._last_gsm) < GSM_SCAN_INTERVAL:
+            return
+        self._last_gsm = now
+        try:
+            self._gsm_devices = await self.client.get_gsm_config()
+            self._gsm_loaded = True
+        except Exception as err:  # noqa: BLE001 - legacy config is best-effort
+            _LOGGER.debug("GSM config fetch failed: %s", err)
 
     async def _maybe_refresh_telemetry(self, devices: list[Any]) -> None:
         """Refresh cached MQTT telemetry for Wi-Fi operators, best-effort.

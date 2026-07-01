@@ -25,6 +25,10 @@ DEFAULT_SCAN_INTERVAL = 60
 # a much slower cadence than the cloud status.
 TELEMETRY_SCAN_INTERVAL = 900
 
+# Legacy GWeb (GSM/ULTRA) device config changes rarely; refresh it on a slower
+# cadence than the main cloud status to avoid extra round-trips every poll.
+GSM_SCAN_INTERVAL = 300
+
 PLATFORMS = ["binary_sensor", "cover", "sensor"]
 
 MANUFACTURER = "Centurion Systems (CenSys)"

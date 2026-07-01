@@ -72,6 +72,91 @@ class Device:
         )
 
 
+def _pick(data: dict[str, Any], *keys: str, default: Any = None) -> Any:
+    """Return the first present key (case-tolerant) from a dict."""
+    for key in keys:
+        if key in data:
+            return data[key]
+    lowered = {k.lower(): v for k, v in data.items()}
+    for key in keys:
+        if key.lower() in lowered:
+            return lowered[key.lower()]
+    return default
+
+
+@dataclass
+class GsmIo:
+    """A single configurable button/output on a legacy GSM/ULTRA device."""
+
+    io_number: int
+    io_name: str = ""
+    io_direction: int | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> "GsmIo":
+        return cls(
+            io_number=int(_pick(data, "IONumber", "IoNumber", default=0)),
+            io_name=str(_pick(data, "IOName", "IoName", default="") or ""),
+            io_direction=_pick(data, "IODirection", "IoDirection"),
+            raw=data,
+        )
+
+    @property
+    def is_gate_trigger(self) -> bool:
+        """Whether this IO looks like the main gate trigger (TRG/gate)."""
+        name = self.io_name.upper()
+        return any(tag in name for tag in ("TRG", "TRIGGER", "GATE"))
+
+
+@dataclass
+class GsmDevice:
+    """A legacy GSM/ULTRA operator from the GWeb config (MCRConfEnV3).
+
+    These reach the cloud through a GSM/ULTRA module rather than SMART Wi-Fi,
+    and are controlled by "activating" one of their IOs (see
+    ``CentsysRemoteClient.trigger_gsm_activation``).
+    """
+
+    device_id: int
+    name: str = ""
+    imei: str | None = None
+    device_type: int | None = None
+    online: bool | None = None
+    is_admin: bool | None = None
+    ios: list[GsmIo] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def key(self) -> str:
+        """Stable id for this device within coordinator data / entities."""
+        return f"gsm-{self.device_id}"
+
+    @property
+    def trigger_io(self) -> GsmIo | None:
+        """The IO to use for a gate open/close (a TRG-like IO, else the first)."""
+        if not self.ios:
+            return None
+        for io in self.ios:
+            if io.is_gate_trigger:
+                return io
+        return self.ios[0]
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> "GsmDevice":
+        ios_raw = _pick(data, "IOConfigs", "IoConfigs", "Ios", default=[]) or []
+        return cls(
+            device_id=int(_pick(data, "DeviceId", default=0)),
+            name=str(_pick(data, "DeviceName", default="") or ""),
+            imei=_pick(data, "DeviceImei", "Imei"),
+            device_type=_pick(data, "DeviceType"),
+            online=_pick(data, "DeviceOnline", "Online"),
+            is_admin=_pick(data, "DeviceAdmin", "IsAdmin"),
+            ios=[GsmIo.from_json(io) for io in ios_raw if isinstance(io, dict)],
+            raw=data,
+        )
+
+
 @dataclass
 class OperatorStatus:
     """Live status from GetOperatorOverview."""

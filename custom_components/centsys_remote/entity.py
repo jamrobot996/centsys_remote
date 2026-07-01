@@ -76,3 +76,37 @@ class CentsysEntity(CoordinatorEntity[CentsysCoordinator]):
             serial_number=self._serial,
             sw_version=hw.get("coreFirmwareVersion"),
         )
+
+
+class CentsysGsmEntity(CoordinatorEntity[CentsysCoordinator]):
+    """Common base for a legacy GSM/ULTRA operator (keyed by ``gsm-<id>``)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: CentsysCoordinator, key: str) -> None:
+        super().__init__(coordinator)
+        self._key = key
+
+    @property
+    def _device_data(self) -> dict[str, Any] | None:
+        return self.coordinator.data.get(self._key)
+
+    @property
+    def _gsm_device(self):
+        data = self._device_data
+        return data.get("gsm_device") if data else None
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._device_data is not None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        device = self._gsm_device
+        name = device.name if device and device.name else self._key
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._key)},
+            name=name,
+            manufacturer=MANUFACTURER,
+            model="GSM/ULTRA operator",
+        )

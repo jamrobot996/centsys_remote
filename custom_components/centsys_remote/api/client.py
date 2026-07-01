@@ -28,6 +28,7 @@ from typing import Any
 from urllib.parse import quote
 
 import aiohttp
+from yarl import URL
 
 from . import const
 from .exceptions import (
@@ -36,7 +37,7 @@ from .exceptions import (
     CentsysError,
     OtpInvalidError,
 )
-from .models import Device, DeviceInfo, OperatorStatus
+from .models import Device, DeviceInfo, GsmDevice, OperatorStatus
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -473,6 +474,67 @@ class CentsysRemoteClient:
             accept="*/*",
         )
         return self._parse_json(text)
+
+    async def get_gsm_config(self) -> list[GsmDevice]:
+        """List legacy GSM/ULTRA operators from the GWeb config (MCRConfEnV3).
+
+        Returns an empty list for Wi-Fi-only accounts (the gateway replies
+        "No Buttons for this number", a plain string rather than a config
+        object).
+        """
+        raw = await self.get_buttons()
+        if not isinstance(raw, dict):
+            return []
+        configs = raw.get("DeviceConfigs") or raw.get("deviceConfigs") or []
+        if not isinstance(configs, list):
+            return []
+        return [GsmDevice.from_json(c) for c in configs if isinstance(c, dict)]
+
+    async def trigger_gsm_activation(self, device_id: int | str, io_number: int | str) -> str:
+        """Trigger a button on a legacy GSM/ULTRA device via the GWeb gateway.
+
+        This is the legacy equivalent of :meth:`open_gate`, for operators that
+        reach the cloud through a GSM/ULTRA module rather than SMART Wi-Fi.
+
+        ``device_id`` and ``io_number`` come from the device's configuration
+        (see :meth:`get_buttons` -> operators and their activations). Returns
+        the gateway's status message on success ("Activation Queued
+        Successfully") and raises on a known failure state.
+        """
+        if not self._gweb_token:
+            await self.fetch_gweb_token()
+        assert self._gweb_token is not None
+
+        # data = base64(deviceId) | base64(token) | base64(ioNumber), placed raw
+        # in the query string (the gateway decodes each base64 part itself).
+        parts = "|".join(
+            base64.b64encode(str(v).encode()).decode()
+            for v in (device_id, self._gweb_token, io_number)
+        )
+        # encoded=True: send the base64 exactly as the app does, without letting
+        # the HTTP layer percent-encode the '+', '/' and '=' characters.
+        url = URL(
+            f"{const.GWEB_BASE}{const.EP_GWEB_ACTIVATE}?data={parts}",
+            encoded=True,
+        )
+        _, text = await self._request(
+            "GET",
+            url,
+            op="MCRActEn",
+            accept="*/*",
+        )
+        # Response is a JSON-ish quoted string; unwrap escapes and quotes.
+        result = text.replace("\\", "").strip().strip('"')
+
+        if result == "Activation Queued Successfully":
+            return result
+        if result == "Device is Offline":
+            raise CentsysError("GSM device is offline")
+        if result == "Number is time barred":
+            raise CentsysError("Number is time barred (too many requests)")
+        if result == "Config Required":
+            raise CentsysError("Config required; refresh the device configuration")
+        raise CentsysApiError(f"Activation failed: {result!r}", status=200, body=text)
 
     async def get_backup(self) -> Any:
         """Fetch the user's latest app backup from the GWeb ``RemotesAppBackup``

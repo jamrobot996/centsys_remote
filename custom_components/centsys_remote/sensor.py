@@ -153,15 +153,13 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: CentsysCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_setup_dynamic_entities(
-        entry,
-        coordinator,
-        async_add_entities,
-        lambda serial: [
-            CentsysSensor(coordinator, serial, description)
-            for description in SENSORS
-        ],
-    )
+    def _factory(serial: str):
+        data = coordinator.data.get(serial) or {}
+        if data.get("kind") != "wifi":
+            return []
+        return [CentsysSensor(coordinator, serial, description) for description in SENSORS]
+
+    async_setup_dynamic_entities(entry, coordinator, async_add_entities, _factory)
 
 
 class CentsysSensor(CentsysEntity, SensorEntity):

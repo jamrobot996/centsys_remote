@@ -28,7 +28,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .api.exceptions import CentsysError
 from .const import DOMAIN
 from .coordinator import CentsysCoordinator
-from .entity import CentsysEntity, async_setup_dynamic_entities
+from .entity import CentsysEntity, CentsysGsmEntity, async_setup_dynamic_entities
 
 # How long to follow the live MQTT status stream after a press (covers the
 # open + auto-close cycle) and how long a live frame stays authoritative before
@@ -43,12 +43,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: CentsysCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_setup_dynamic_entities(
-        entry,
-        coordinator,
-        async_add_entities,
-        lambda serial: [CentsysGateCover(coordinator, serial)],
-    )
+
+    def _factory(serial: str):
+        data = coordinator.data.get(serial) or {}
+        if data.get("kind") == "gsm":
+            return [CentsysGsmGateCover(coordinator, serial)]
+        return [CentsysGateCover(coordinator, serial)]
+
+    async_setup_dynamic_entities(entry, coordinator, async_add_entities, _factory)
 
 
 class CentsysGateCover(CentsysEntity, CoverEntity):
@@ -149,6 +151,47 @@ class CentsysGateCover(CentsysEntity, CoverEntity):
             )
         await self.coordinator.async_request_refresh()
         self._start_live_follow()
+
+    async def async_open_cover(self, **kwargs) -> None:
+        await self._trigger()
+
+    async def async_close_cover(self, **kwargs) -> None:
+        await self._trigger()
+
+
+class CentsysGsmGateCover(CentsysGsmEntity, CoverEntity):
+    """A legacy GSM/ULTRA gate as an HA cover.
+
+    This path has no live position feedback, so the cover uses ``assumed_state``
+    and both open and close activate the device's gate-trigger IO (a momentary
+    pulse), mirroring the physical remote and the app's button.
+    """
+
+    _attr_device_class = CoverDeviceClass.GATE
+    _attr_supported_features = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
+    _attr_assumed_state = True
+    _attr_name = None  # primary entity -> use the device name
+
+    def __init__(self, coordinator: CentsysCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        self._attr_unique_id = f"{key}_gate"
+
+    @property
+    def is_closed(self) -> bool | None:
+        # No position feedback on the GSM path.
+        return None
+
+    async def _trigger(self) -> None:
+        device = self._gsm_device
+        io = device.trigger_io if device else None
+        if device is None or io is None:
+            raise HomeAssistantError("No trigger button configured for this gate.")
+        try:
+            await self.coordinator.client.trigger_gsm_activation(
+                device.device_id, io.io_number
+            )
+        except CentsysError as err:
+            raise HomeAssistantError(f"Failed to trigger gate: {err}") from err
 
     async def async_open_cover(self, **kwargs) -> None:
         await self._trigger()
