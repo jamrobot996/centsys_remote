@@ -269,12 +269,10 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self._gsm_diag[gsm.key] = diag
 
     def async_schedule_airtime_refresh(self, key: str, device_id: int | str) -> None:
-        """Poll the cached diagnostics after an on-demand airtime request.
+        """Poll cached diagnostics after an on-demand airtime request.
 
-        The operator answers the balance query over the cellular network a
-        little while after it is queued, so this runs in the background and
-        refreshes the diagnostics a few times until the tokens appear (or the
-        attempts run out), pushing each update to the entities.
+        The balance answer lands a little after it is queued, so refresh in the
+        background until the tokens appear (or attempts run out).
         """
         self.hass.async_create_background_task(
             self._poll_airtime(key, device_id), name=f"{DOMAIN}_airtime_{key}"

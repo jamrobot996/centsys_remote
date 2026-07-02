@@ -34,10 +34,8 @@ async def async_setup_entry(
 class CentsysGsmAirtimeButton(CentsysGsmEntity, ButtonEntity):
     """Request a network-balance (airtime) refresh for a GSM/ULTRA operator.
 
-    Pressing this asks the operator to query its balance over the cellular
-    network (a billable action), then the call/SMS token sensors update once the
-    result syncs back. It is the only way to populate those sensors, so airtime
-    is never fetched automatically.
+    Billable (queries the balance over the cellular network), so it is on-demand
+    only; the call/SMS token sensors update once the result syncs back.
     """
 
     _attr_translation_key = "gsm_refresh_airtime"

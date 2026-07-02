@@ -158,16 +158,13 @@ class GsmDevice:
         )
 
 
-# AppIOStatesEN reports each IO's state as an integer that is the ASCII code of
-# the app's single-char state id. Codes 49-52 ('1'-'4') are unambiguous gate
-# positions. Code 48 ('0', "opening") is intentionally excluded: it is also the
-# idle value of unconfigured (NA) IOs, so a real "opening" can't be told apart
-# from an idle slot. Outputs use the 88-99 range, so 49-52 mean a feedback IO.
+# Feedback-IO state codes -> gate position. 48 ("opening") is omitted on
+# purpose: it collides with the idle value of unconfigured IOs.
 GSM_GATE_STATES: dict[int, str] = {
     49: "open",
     50: "closing",
     51: "closed",
-    52: "running",  # moving, direction unknown
+    52: "running",
 }
 
 

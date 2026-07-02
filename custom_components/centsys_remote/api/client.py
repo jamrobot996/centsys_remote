@@ -559,10 +559,8 @@ class CentsysRemoteClient:
     async def get_gsm_io_states(self, device_id: int | str) -> GsmStatus | None:
         """Fetch the live IO states for a legacy GSM/ULTRA device (AppIOStatesEN).
 
-        This is the lightweight status poll the app runs on a timer to show a
-        gate's live open/closed position. It is keyed only by the (base64)
-        device id and needs no token. Returns a :class:`GsmStatus`, or ``None``
-        if the gateway reports the device offline.
+        Lightweight status poll for the gate's live position. Returns a
+        :class:`GsmStatus`, or ``None`` if the device is offline.
         """
         data = base64.b64encode(str(device_id).encode()).decode()
         # encoded=True: send the base64 exactly (its '+', '/', '=' unescaped).
@@ -592,11 +590,10 @@ class CentsysRemoteClient:
         return GsmStatus.from_root(device_id, root)
 
     async def get_gsm_status(self, device_id: int | str) -> GsmDeviceStatus | None:
-        """Fetch diagnostics for a GSM/ULTRA device (MCRStatus): voltage, signal,
-        firmware, antenna, connection, airtime tokens, etc.
+        """Fetch cached diagnostics for a GSM/ULTRA device (MCRStatus): voltage,
+        signal, firmware, antenna, connection, airtime tokens, etc.
 
-        Reads the last-known values (param "1"); it does not spend airtime by
-        waking the device. Returns ``None`` if the response can't be parsed.
+        Reads last-known values only. Returns ``None`` on an unparseable body.
         """
         if not self._gweb_token:
             await self.fetch_gweb_token()
@@ -623,20 +620,16 @@ class CentsysRemoteClient:
     async def request_gsm_airtime(self, device_id: int | str) -> str:
         """Queue a network-balance (airtime) refresh for a GSM/ULTRA device.
 
-        Unlike :meth:`get_gsm_status` (a cached read), this asks the operator to
-        query its balance over the cellular network, so it has a real cost and
-        must only ever be triggered on demand. The balance itself arrives
-        asynchronously and is read back later via :meth:`get_gsm_status`.
-
-        Mirrors the app's ``RequestAirtime``: an ``MCRStatus`` call with the
-        access-token JWT as param 2 and the mode flag ``"3"`` (vs ``"1"`` for a
-        cached read). Returns the gateway's status message and raises on a known
-        failure state.
+        The operator queries its balance over the cellular network (a billable
+        action), so this is on-demand only; the result is read back later via
+        :meth:`get_gsm_status`. Returns the gateway's status message.
         """
-        token = self._require_token()
+        if not self._gweb_token:
+            await self.fetch_gweb_token()
+        assert self._gweb_token is not None
         parts = "|".join(
             base64.b64encode(str(v).encode()).decode()
-            for v in (device_id, token, "3")
+            for v in (device_id, self._gweb_token, "3")
         )
         url = URL(f"{const.GWEB_BASE}{const.EP_GWEB_STATUS}?data={parts}", encoded=True)
         _, text = await self._request("GET", url, op="MCRStatus(airtime)", accept="*/*")
