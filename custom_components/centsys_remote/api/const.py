@@ -17,13 +17,7 @@ MQTT_PORT = 8880
 # the MQTT clientId and a "ClientId" user property on every publish.
 MQTT_CLIENT_ID_PREFIX = "mcr:"
 
-# Gate-open (trigger) packet templates. The gate validates only the cmd 03
-# challenge echo (read live each session), not the 4-byte nonces, so the cmd 01
-# identity + cmd 05 command can be reused. cmd 01's last 8 bytes are the
-# per-operator identity; override per operator via CentsysRemoteClient.open_gate().
-MQTT_OPEN_CMD01 = bytes.fromhex("01010100b2f068d84dbf8b1b91f52dfc")
-MQTT_OPEN_CMD05 = bytes.fromhex("0101050099db7ad953bab19c")
-MQTT_OPEN_CMD03_PREFIX = bytes.fromhex("01010300b2f04ad8")
+# Trigger packets are built per operator from its macAddress (see api/packets.py).
 
 # Service-level bearer used for the initial SendOtp/ValidateOtp calls, before a
 # user session token exists. This is what allows a from-scratch OTP login.

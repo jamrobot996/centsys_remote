@@ -52,6 +52,8 @@ class Device:
     faulty_device: bool | None = None
     warranty_void: bool | None = None
     last_seen: str | None = None
+    # Operator MAC from the device listing; used to build the trigger packets.
+    mac_address: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -69,6 +71,7 @@ class Device:
             faulty_device=data.get("faultyDevice"),
             warranty_void=data.get("warrantyVoid"),
             last_seen=wifi_status.get("lastBackendConnectionDate"),
+            mac_address=data.get("macAddress"),
             raw=data,
         )
 

@@ -127,10 +127,12 @@ class CentsysGateCover(CentsysEntity, CoverEntity):
 
         async def _runner() -> None:
             try:
+                device = self._device_data["device"] if self._device_data else None
                 await self.coordinator.client.follow_overview(
                     self._serial,
                     callback=_on_overview,
                     duration=LIVE_FOLLOW_SECONDS,
+                    mac=getattr(device, "mac_address", None),
                 )
             except Exception:  # noqa: BLE001 - live follow is best-effort
                 pass
@@ -144,8 +146,15 @@ class CentsysGateCover(CentsysEntity, CoverEntity):
         )
 
     async def _trigger(self) -> None:
+        device = self._device_data["device"] if self._device_data else None
+        mac = getattr(device, "mac_address", None)
+        if not mac:
+            raise HomeAssistantError(
+                "Gate has no MAC address in the cloud device list; cannot build "
+                "the trigger packet."
+            )
         try:
-            ok = await self.coordinator.client.open_gate(self._serial)
+            ok = await self.coordinator.client.open_gate(self._serial, mac=mac)
         except CentsysError as err:
             raise HomeAssistantError(f"Failed to trigger gate: {err}") from err
         if not ok:

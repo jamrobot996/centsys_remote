@@ -1,25 +1,10 @@
 """Gate control and live telemetry over MQTT (mutual TLS).
 
 A SMART Wi-Fi operator is controlled over a cloud MQTT broker (mTLS, MQTT v5),
-not HTTP. The open command is a short challenge-response; all topics are
-prefixed with the long operator serial:
-
-    ->  connectionRequest          (empty, QoS 2)
-    <-  connectionRequestResponse  0xff               ("device present")
-    ->  userRemoteTrigger  cmd 01  (identity packet)
-    <-  ...Response        cmd 02  (... + 4-byte challenge)
-    ->  userRemoteTrigger  cmd 05  (the command code)
-    <-  ...Response        cmd 06
-    ->  userRemoteTrigger  cmd 03  (... + the challenge echoed back)
-    <-  ...Response        cmd 04                     -> gate moves
-    ->  disconnect         (empty)                    (release the device)
-
-Key details:
-  * Connect as MQTT v5 with clientId "mcr:<number>" and attach that same value
-    as a "ClientId" user property + a ResponseTopic on every publish (the gate
-    uses these to know who is talking and where to reply).
-  * The gate issues a fresh 4-byte challenge in cmd 02 each session and only
-    validates that cmd 03 echoes it; the 4-byte nonces are not validated.
+not HTTP. Topics are prefixed with the long operator serial. The open command
+is a short challenge-response: connect, request the connection, then exchange
+the identity, time-sync and activation packets (see ``packets``); the gate
+returns a fresh challenge that the activation echoes back.
 
 These functions are blocking; call them from an executor (see
 CentsysRemoteClient.open_gate / get_overview / follow_overview).
@@ -214,10 +199,17 @@ def open_gate_blocking(
     key_pem: bytes,
     cmd01: bytes,
     cmd05: bytes,
-    cmd03_prefix: bytes,
+    build_cmd03,
+    decode_cmd04,
     timeout: float = 8.0,
 ) -> bool:
-    """Run the full open handshake. Returns True if the gate acked cmd 03.
+    """Run the full open handshake. Returns True if the gate accepted the trigger.
+
+    ``build_cmd03(config_version)`` builds the activation prefix (the live 4-byte
+    challenge is appended here). The activation carries a configuration version;
+    a stricter gate rejects a stale one and reports the value it expects, so on
+    a mismatch the trigger is retried once with that value. ``decode_cmd04``
+    turns a cmd 04 response into ``(response_code, config_version)``.
 
     Blocking (uses paho's loop in a background thread internally). Intended to be
     run via ``loop.run_in_executor`` from async code.
@@ -225,6 +217,8 @@ def open_gate_blocking(
     import paho.mqtt.client as mqtt
     from paho.mqtt.packettypes import PacketTypes
     from paho.mqtt.properties import Properties
+
+    from . import packets
 
     t_req = f"{serial}/connectionRequest"
     t_req_resp = f"{serial}/connectionRequestResponse"
@@ -310,10 +304,23 @@ def open_gate_blocking(
         client.publish(t_trig, cmd05, qos=0, properties=props(t_trig_resp))
         wait_trig()
 
-        client.publish(t_trig, cmd03_prefix + challenge, qos=0, properties=props(t_trig_resp))
-        cmd04 = wait_trig()
-        _LOGGER.debug("MQTT open: final response %s", cmd04.hex(" ") if cmd04 else None)
-        return cmd04 is not None
+        # Most operators accept config version 0; a stricter one rejects it and
+        # reports the version it wants, so retry once with that value.
+        cv = 0
+        for _ in range(2):
+            client.publish(
+                t_trig, build_cmd03(cv) + challenge, qos=0, properties=props(t_trig_resp)
+            )
+            cmd04 = wait_trig()
+            _LOGGER.debug("MQTT open: response %s", cmd04.hex(" ") if cmd04 else None)
+            if not cmd04:
+                return False
+            code, gate_cv = decode_cmd04(cmd04)
+            if code != packets.ACTIVATION_CONFIGURATION_MISMATCH or gate_cv == cv:
+                return code == packets.ACTIVATION_OK
+            _LOGGER.debug("MQTT open: config mismatch, retrying with version %s", gate_cv)
+            cv = gate_cv
+        return False
     finally:
         try:
             client.publish(t_disc, b"", qos=0, properties=props(t_disc))

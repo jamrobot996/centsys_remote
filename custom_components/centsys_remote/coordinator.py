@@ -313,7 +313,9 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if not serial or not getattr(device, "is_wifi_device", False):
                 continue
             try:
-                overview = await self.client.get_overview(serial)
+                overview = await self.client.get_overview(
+                    serial, mac=getattr(device, "mac_address", None)
+                )
             except CentsysError as err:
                 _LOGGER.debug("Telemetry fetch failed for %s: %s", serial, err)
                 continue

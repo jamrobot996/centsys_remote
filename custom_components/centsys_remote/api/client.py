@@ -712,10 +712,8 @@ class CentsysRemoteClient:
         self,
         serial: str,
         *,
+        mac: str | bytes,
         au: bool = False,
-        cmd01: bytes | None = None,
-        cmd05: bytes | None = None,
-        cmd03_prefix: bytes | None = None,
         timeout: float = 8.0,
     ) -> bool:
         """Trigger (open) the gate over MQTT.
@@ -724,15 +722,19 @@ class CentsysRemoteClient:
         MQTT v5 with clientId ``mcr:<number>`` and runs the challenge-response
         handshake (see ``mqtt_remote``). Returns True if the gate acknowledged.
 
-        ``serial`` must be the LONG operator serial (the MQTT topic prefix). The
-        ``cmd01/cmd05/cmd03_prefix`` packet templates default to the built-in
-        values; pass per-operator templates to override.
+        ``serial`` must be the LONG operator serial (the MQTT topic prefix).
+        ``mac`` is the operator's ``macAddress`` from the device listing, used to
+        build the per-operator trigger packets.
 
         Runs the blocking MQTT handshake in a thread so it is safe to await.
         """
         import asyncio
 
-        from . import mqtt_remote
+        from . import mqtt_remote, packets
+
+        mac4 = packets.parse_mac(mac)
+        cmd01 = packets.build_cmd01(self.mobile_number, mac4)
+        cmd05 = packets.build_cmd05(mac4)
 
         cert = await self.get_certificate()
         cert_pem, key_pem = await asyncio.get_running_loop().run_in_executor(
@@ -751,19 +753,32 @@ class CentsysRemoteClient:
                 serial=serial,
                 cert_pem=cert_pem,
                 key_pem=key_pem,
-                cmd01=cmd01 or const.MQTT_OPEN_CMD01,
-                cmd05=cmd05 or const.MQTT_OPEN_CMD05,
-                cmd03_prefix=cmd03_prefix or const.MQTT_OPEN_CMD03_PREFIX,
+                cmd01=cmd01,
+                cmd05=cmd05,
+                build_cmd03=lambda cv: packets.build_cmd03_prefix(mac4, cv),
+                decode_cmd04=lambda p: packets.decode_cmd04(mac4, p),
                 timeout=timeout,
             ),
         )
+
+    def _wake_packet(self, mac: str | bytes | None) -> bytes:
+        """Build the cmd 01 identity packet used to wake telemetry (no actuation).
+
+        Returns b"" when no MAC is known, so the caller listens passively rather
+        than sending an identity the gate would reject.
+        """
+        if not mac:
+            return b""
+        from . import packets
+
+        return packets.build_cmd01(self.mobile_number, packets.parse_mac(mac))
 
     async def get_overview(
         self,
         serial: str,
         *,
+        mac: str | bytes | None = None,
         au: bool = False,
-        wake_cmd01: bytes | None = None,
         timeout: float = 15.0,
     ):
         """Fetch live telemetry from the gate over MQTT.
@@ -773,9 +788,9 @@ class CentsysRemoteClient:
         ``deviceOverview`` push, or None if the device didn't respond.
 
         A battery-backed operator keeps its Wi-Fi telemetry asleep, so this
-        sends a cmd 01 identity packet to wake it (does NOT open the gate; see
-        ``mqtt_remote.fetch_overview_blocking``). Defaults to the built-in
-        identity packet; override per-operator with ``wake_cmd01``.
+        sends a cmd 01 identity packet (built from ``mac``) to wake it -- this
+        does NOT open the gate (see ``mqtt_remote.fetch_overview_blocking``).
+        With no ``mac`` it listens passively.
 
         ``serial`` must be the LONG operator serial (the MQTT topic prefix).
         Runs the blocking MQTT exchange in a thread so it is safe to await.
@@ -783,6 +798,8 @@ class CentsysRemoteClient:
         import asyncio
 
         from . import mqtt_remote
+
+        wake_cmd01 = self._wake_packet(mac)
 
         cert = await self.get_certificate()
         cert_pem, key_pem = await asyncio.get_running_loop().run_in_executor(
@@ -801,7 +818,7 @@ class CentsysRemoteClient:
                 serial=serial,
                 cert_pem=cert_pem,
                 key_pem=key_pem,
-                wake_cmd01=const.MQTT_OPEN_CMD01 if wake_cmd01 is None else wake_cmd01,
+                wake_cmd01=wake_cmd01,
                 timeout=timeout,
             ),
         )
@@ -812,8 +829,8 @@ class CentsysRemoteClient:
         *,
         callback,
         duration: float,
+        mac: str | bytes | None = None,
         au: bool = False,
-        wake_cmd01: bytes | None = None,
     ) -> None:
         """Stream live telemetry for ``duration`` s, calling ``callback(ov)``.
 
@@ -822,10 +839,13 @@ class CentsysRemoteClient:
         onto your event loop. Best-effort -- failures are swallowed.
 
         ``serial`` must be the LONG operator serial (the MQTT topic prefix).
+        ``mac`` builds the telemetry wake packet (see :meth:`get_overview`).
         """
         import asyncio
 
         from . import mqtt_remote
+
+        wake_cmd01 = self._wake_packet(mac)
 
         cert = await self.get_certificate()
         cert_pem, key_pem = await asyncio.get_running_loop().run_in_executor(
@@ -846,6 +866,6 @@ class CentsysRemoteClient:
                 key_pem=key_pem,
                 on_overview=callback,
                 duration=duration,
-                wake_cmd01=const.MQTT_OPEN_CMD01 if wake_cmd01 is None else wake_cmd01,
+                wake_cmd01=wake_cmd01,
             ),
         )
