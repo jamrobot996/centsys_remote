@@ -17,3 +17,4 @@ venv/
 *.swp
 .idea/
 .vscode/
+custom_components/centsys_remote/gate-remote.code-workspace

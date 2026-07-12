@@ -66,8 +66,8 @@ class CentsysGateCover(CentsysEntity, CoverEntity):
     def __init__(self, coordinator: CentsysCoordinator, serial: str) -> None:
         super().__init__(coordinator, serial)
         self._attr_unique_id = f"{serial}_gate"
-        # Live status from the MQTT deviceOverview stream (takes precedence over
-        # the slower HTTP poll while fresh). One of the APPGATE_STATUS labels.
+        # Live gate status from the MQTT deviceOverview stream (takes precedence
+        # over the slower HTTP poll while fresh).
         self._live_status: str | None = None
         self._live_expiry = 0.0
         self._following = False
@@ -154,7 +154,11 @@ class CentsysGateCover(CentsysEntity, CoverEntity):
                 "the trigger packet."
             )
         try:
-            ok = await self.coordinator.client.open_gate(self._serial, mac=mac)
+            ok = await self.coordinator.client.open_gate(
+                self._serial,
+                mac=mac,
+                product_code=getattr(device, "product_code", None),
+            )
         except CentsysError as err:
             raise HomeAssistantError(f"Failed to trigger gate: {err}") from err
         if not ok:
