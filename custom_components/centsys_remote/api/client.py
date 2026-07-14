@@ -142,6 +142,51 @@ def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
     return redacted
 
 
+def _sanitize_for_log(value: Any) -> str:
+    """Redact sensitive fields and neutralize CRLF for safe logging (CWE-117)."""
+    if value is None:
+        return "None"
+        
+    sensitive_tokens = (
+        "mobile",
+        "otp",
+        "token",
+        "authorization",
+        "password",
+        "secret",
+        "bearer",
+    )
+    
+    def _redact(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {
+                k: "***REDACTED***" if any(t in str(k).lower() for t in sensitive_tokens) else _redact(v) 
+                for k, v in obj.items()
+            }
+        if isinstance(obj, list):
+            return [_redact(i) for i in obj]
+        return obj
+        
+    if isinstance(value, (dict, list)):
+        redacted_obj = _redact(value)
+        try:
+            val_str = json.dumps(redacted_obj)
+        except Exception:
+            val_str = str(redacted_obj)
+    else:
+        val_str = str(value)
+        
+    # Redact URL-encoded or raw string parameters
+    val_str = re.sub(
+        r"(?i)(mobile|otp|token|authorization|password|secret|bearer)=([^&]+)", 
+        r"\1=***REDACTED***", 
+        val_str
+    )
+    
+    # Neutralize CRLF sequences to prevent Log Injection (CWE-117)
+    return val_str.replace("\n", "\\n").replace("\r", "\\r")
+
+
 class CentsysRemoteClient:
     """Thin async wrapper around the two gate backends."""
 
@@ -222,8 +267,13 @@ class CentsysRemoteClient:
             headers["Content-Type"] = content_type
 
         _LOGGER.debug(
-            "[%s] -> %s %s\n  req headers: %s\n  json: %s\n  data: %s",
-            op, method, url, _redact_headers(headers), json_body, data,
+            "[%s] -> %s %s | req headers: %s | json: %s | data: %s",
+            _sanitize_for_log(op), 
+            _sanitize_for_log(method), 
+            _sanitize_for_log(url), 
+            _sanitize_for_log(_redact_headers(headers)), 
+            _sanitize_for_log(json_body), 
+            _sanitize_for_log(data),
         )
         try:
             async with self._session.request(
@@ -245,8 +295,11 @@ class CentsysRemoteClient:
             raise CentsysError(f"{op}: {err!r}") from err
 
         _LOGGER.debug(
-            "[%s] <- HTTP %s\n  resp headers: %s\n  body: %s",
-            op, status, resp_headers, text,
+            "[%s] <- HTTP %s | resp headers: %s | body: %s",
+            _sanitize_for_log(op), 
+            status, 
+            _sanitize_for_log(resp_headers), 
+            _sanitize_for_log(text),
         )
 
         if status not in expected_status:
