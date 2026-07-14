@@ -247,8 +247,13 @@ class CentsysRemoteClient:
             headers["Content-Type"] = content_type
 
         _LOGGER.debug(
-            "[%s] -> %s %s\n  req headers: %s\n  json: %s\n  data: %s",
-            op, method, url, _redact_headers(headers), _redact_payload(json_body), data,
+            "[%s] -> %s %s\n  req headers: %s\n  json_present: %s\n  data_present: %s",
+            op,
+            method,
+            url,
+            _redact_headers(headers),
+            json_body is not None,
+            data is not None,
         )
         try:
             async with self._session.request(
