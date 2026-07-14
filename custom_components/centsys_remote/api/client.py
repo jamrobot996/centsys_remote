@@ -142,6 +142,31 @@ def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
     return redacted
 
 
+def _redact_payload(value: Any) -> Any:
+    """Return a logging-safe copy of request payload data."""
+    sensitive_tokens = (
+        "mobile",
+        "otp",
+        "token",
+        "authorization",
+        "password",
+        "secret",
+        "bearer",
+    )
+    if isinstance(value, dict):
+        redacted: dict[Any, Any] = {}
+        for k, v in value.items():
+            key_str = str(k).lower()
+            if any(token in key_str for token in sensitive_tokens):
+                redacted[k] = "***REDACTED***"
+            else:
+                redacted[k] = _redact_payload(v)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_payload(v) for v in value]
+    return value
+
+
 class CentsysRemoteClient:
     """Thin async wrapper around the two gate backends."""
 
@@ -223,7 +248,7 @@ class CentsysRemoteClient:
 
         _LOGGER.debug(
             "[%s] -> %s %s\n  req headers: %s\n  json: %s\n  data: %s",
-            op, method, url, _redact_headers(headers), json_body, data,
+            op, method, url, _redact_headers(headers), _redact_payload(json_body), data,
         )
         try:
             async with self._session.request(
