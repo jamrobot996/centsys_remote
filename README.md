@@ -2,7 +2,7 @@
 
 > **Note:** This repository is a custom fork of the original [lex-campbell/centsys_remote](https://github.com/lex-campbell/centsys_remote). We have completely overhauled the architecture to add persistent MQTT telemetry and optimistic UI updates, delivering **0ms latency** for Home Assistant triggers and real-time telemetry for sliding gates. Please see our [Improvements Report](centsys_improvements_report.md) for full details on the enhancements we made.
 
-Control and monitor your Centurion gate operator directly from Home Assistant. Works flawlessly with **SMART Wi-Fi operators** (including the **Centurion D3 Smart+** and **D5 Evo SMART**) and older **GSM/ULTRA** operators via cellular.
+Control and monitor your Centurion gate operator directly from Home Assistant. Works flawlessly with **SMART Wi-Fi operators** (including the **D3 Smart+** and **D5 Evo SMART**) and older **GSM/ULTRA** operators via cellular.
 
 ## Features & Improvements
 - **Gate Cover Control**: Open and close your gate directly from HA.
