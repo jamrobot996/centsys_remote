@@ -102,7 +102,7 @@ class DeviceOverview:
         return asdict(self)
 
 
-def parse_device_overview(payload: bytes) -> DeviceOverview:
+def parse_device_overview(payload: bytes, is_garage: bool = False) -> DeviceOverview:
     """Decode a raw deviceOverview MQTT payload into structured telemetry.
 
     ``payload`` is the full MQTT payload; the leading 4-byte header is stripped
@@ -111,7 +111,13 @@ def parse_device_overview(payload: bytes) -> DeviceOverview:
     body = bytes(payload)[4:]
     n = len(body)
 
-    if n >= 36 and n < 38:  # INFRATP_OVERVIEW_V2 (slider-plus, e.g. D5 Evo)
+    if is_garage and n >= 24:  # APPMOBILE_STATUS_OVERVIEWV3 (garage door)
+        nf1, batt, cond, _pad, secs, _timer, _pad2, gate_st, irbc, _xmr, power = (
+            struct.unpack_from("<IHBBHBBBBBB", body, 0)
+        )
+        nf2, temp, irbo, in_v = 0, None, 0, 0
+        family, gate_position = "sdo5", None
+    elif n >= 36 and n < 38:  # INFRATP_OVERVIEW_V2 (slider-plus, e.g. D5 Evo)
         (
             batt,
             gate_pos,
@@ -147,12 +153,12 @@ def parse_device_overview(payload: bytes) -> DeviceOverview:
         power = body[28]
         in_v = struct.unpack_from("<H", body, 36)[0]
         family, gate_position = "vx", None
-    elif n >= 24:  # APPMOBILE_STATUS_OVERVIEWV3 (garage door)
-        nf1, batt, cond, _pad, secs, _timer, _pad2, gate_st, irbc, _xmr, power = (
-            struct.unpack_from("<IHBBHBBBBBB", body, 0)
+    elif n >= 20:  # APPMOBILE_STATUS_OVERVIEW (sliders/swings)
+        nf1, batt, cond, _pad, secs, _gm, _gs, gate_st, irbo, irbc = (
+            struct.unpack_from("<IHBBHBBBBB", body, 0)
         )
-        nf2, temp, irbo, in_v = 0, None, 0, 0
-        family, gate_position = "sdo5", None
+        nf2, temp, in_v, power = 0, None, 0, 0
+        family, gate_position = "vx", None
     else:
         raise ValueError(f"unrecognized deviceOverview length: {n} bytes")
 

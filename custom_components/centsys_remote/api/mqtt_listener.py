@@ -72,9 +72,12 @@ class MqttListener:
 
         # MQTT session client-id is deliberately different from the trigger
         # client-id (``mcr:<number>``) so both can coexist on the broker.
-        self._session_client_id = f"mcrl:{mobile_number}"
         # The application-level identity the gate expects on every publish.
+        # The broker strictly enforces that the MQTT client_id exactly matches
+        # the certificate (mcr:<number>). If we append a UUID, it silently
+        # drops our subscriptions and kills real-time telemetry!
         self._user_client_id = f"{MQTT_CLIENT_ID_PREFIX}{mobile_number}"
+        self._session_client_id = self._user_client_id
         self._host = MQTT_IP_AU if au else MQTT_IP_ZA
         self._port = MQTT_PORT
 
@@ -266,7 +269,9 @@ class MqttListener:
         try:
             from .mqtt_remote import parse_device_overview
 
-            overview = parse_device_overview(msg.payload)
+            gate = self._gates.get(serial)
+            is_garage = not gate.wake_cmd01 if gate else False
+            overview = parse_device_overview(msg.payload, is_garage=is_garage)
         except (ValueError, Exception) as err:  # noqa: BLE001
             _LOGGER.debug(
                 "MQTT listener: failed to parse overview for %s: %s", serial, err

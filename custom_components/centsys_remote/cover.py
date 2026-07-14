@@ -125,6 +125,7 @@ class CentsysGateCover(CentsysEntity, CoverEntity):
                 "Gate has no MAC address in the cloud device list; cannot build "
                 "the trigger packet."
             )
+
         # Only garage-door operators emit the "sdo5" telemetry frame.
         is_garage = getattr(data.get("overview"), "family", None) == "sdo5"
         try:
@@ -143,9 +144,17 @@ class CentsysGateCover(CentsysEntity, CoverEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_open_cover(self, **kwargs) -> None:
+        if self._status:
+            from .api.enums import OperatorStatus as OpStatus
+            self._status.operator_status = OpStatus.OPENING
+            self.async_write_ha_state()
         await self._trigger()
 
     async def async_close_cover(self, **kwargs) -> None:
+        if self._status:
+            from .api.enums import OperatorStatus as OpStatus
+            self._status.operator_status = OpStatus.CLOSING
+            self.async_write_ha_state()
         await self._trigger()
 
 
