@@ -95,7 +95,7 @@ We created a Home Assistant automation that sends an **instant push notification
 
 ```yaml
 trigger:
-  - entity_id: cover.46_wilson_st  # The CenSys gate cover entity
+  - entity_id: cover.front_gate  # The CenSys gate cover entity
     to: open
     trigger: state
 action:
@@ -113,7 +113,7 @@ For our wall-mounted iPad running HA as a kiosk dashboard, we added a **Browser 
 
 ```yaml
 trigger:
-  - entity_id: cover.46_wilson_st
+  - entity_id: cover.front_gate
     to: open
     trigger: state
 action:
