@@ -24,8 +24,10 @@ from .const import (
     CONF_TOKEN,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    GSM_DIAG_SCAN_INTERVAL,
     GSM_SCAN_INTERVAL,
-    TELEMETRY_SCAN_INTERVAL,
+    MQTT_WAKE_INTERVAL,
+    OVERVIEW_FRESHNESS_TTL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,7 +57,8 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             session_token=entry.data[CONF_TOKEN],
         )
         self._overview: dict[str, Any] = {}
-        self._last_telemetry = 0.0
+        self._overview_ts: dict[str, float] = {}
+        self._mqtt_listener: Any | None = None
         self._no_devices_notice = f"{DOMAIN}_no_devices_{entry.entry_id}"
         self._backup_diagnostic_done = False
         self._gsm_devices: list[Any] = []
@@ -79,7 +82,7 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except CentsysError as err:
             raise UpdateFailed(str(err)) from err
 
-        await self._maybe_refresh_telemetry(devices)
+        await self._ensure_mqtt_listener(devices)
         await self._maybe_refresh_gsm()
         await self._refresh_gsm_status()
         await self._maybe_refresh_gsm_diag()
@@ -256,7 +259,7 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     async def _maybe_refresh_gsm_diag(self) -> None:
         """Refresh GSM diagnostics (voltage/signal/airtime) on the slow cadence."""
         now = time.monotonic()
-        if self._gsm_diag and (now - self._last_gsm_diag) < TELEMETRY_SCAN_INTERVAL:
+        if self._gsm_diag and (now - self._last_gsm_diag) < GSM_DIAG_SCAN_INTERVAL:
             return
         self._last_gsm_diag = now
         for gsm in self._gsm_devices:
@@ -296,31 +299,62 @@ class CentsysCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if diag.call_tokens is not None or diag.sms_tokens is not None:
                 return
 
-    async def _maybe_refresh_telemetry(self, devices: list[Any]) -> None:
-        """Refresh cached MQTT telemetry for Wi-Fi operators, best-effort.
+    async def _ensure_mqtt_listener(self, devices: list[Any]) -> None:
+        """Start or update the persistent MQTT listener for Wi-Fi gates.
 
-        Rate-limited to ``TELEMETRY_SCAN_INTERVAL``. Each fetch wakes the gate
-        and waits for a status broadcast, so failures are expected (asleep /
-        offline) and are swallowed, keeping the last known values.
+        Called on every coordinator poll.  On the first call it creates and
+        starts the listener; on subsequent calls it refreshes the gate list
+        (so a newly-linked gate is picked up without restarting HA).
         """
-        now = time.monotonic()
-        if self._overview and (now - self._last_telemetry) < TELEMETRY_SCAN_INTERVAL:
+        wifi_devices = [
+            d
+            for d in devices
+            if d.serial_number and getattr(d, "is_wifi_device", False)
+        ]
+        if not wifi_devices:
+            if self._mqtt_listener is not None:
+                await self.async_stop_mqtt_listener()
             return
-        self._last_telemetry = now
 
-        for device in devices:
-            serial = device.serial_number
-            if not serial or not getattr(device, "is_wifi_device", False):
-                continue
-            try:
-                overview = await self.client.get_overview(
-                    serial, mac=getattr(device, "mac_address", None)
-                )
-            except CentsysError as err:
-                _LOGGER.debug("Telemetry fetch failed for %s: %s", serial, err)
-                continue
-            except Exception as err:  # noqa: BLE001 - telemetry is best-effort
-                _LOGGER.debug("Telemetry error for %s: %s", serial, err)
-                continue
-            if overview is not None:
-                self._overview[serial] = overview
+        from .api.mqtt_listener import GateInfo, MqttListener
+
+        gates = {}
+        for d in wifi_devices:
+            wake_cmd = self.client._wake_packet(d.mac_address)
+            gates[d.serial_number] = GateInfo(
+                serial=d.serial_number, wake_cmd01=wake_cmd
+            )
+
+        if self._mqtt_listener is None:
+            self._mqtt_listener = MqttListener(
+                self.hass,
+                fetch_certificate=self.client.get_certificate,
+                mobile_number=self.client.mobile_number,
+                on_overview=self._handle_live_overview,
+                wake_interval=MQTT_WAKE_INTERVAL,
+            )
+            self._mqtt_listener.update_gates(gates)
+            await self._mqtt_listener.async_start()
+        else:
+            self._mqtt_listener.update_gates(gates)
+
+    def _handle_live_overview(self, serial: str, overview: Any) -> None:
+        """Handle a real-time MQTT overview frame (called on the event loop)."""
+        self._overview[serial] = overview
+        self._overview_ts[serial] = time.monotonic()
+        if self.data and serial in self.data:
+            self.data[serial]["overview"] = overview
+        self.async_update_listeners()
+
+    def is_overview_fresh(
+        self, serial: str, max_age: float = OVERVIEW_FRESHNESS_TTL
+    ) -> bool:
+        """Return True if the MQTT overview for *serial* is recent enough."""
+        ts = self._overview_ts.get(serial, 0.0)
+        return (time.monotonic() - ts) < max_age
+
+    async def async_stop_mqtt_listener(self) -> None:
+        """Tear down the persistent MQTT listener (called on entry unload)."""
+        if self._mqtt_listener is not None:
+            await self._mqtt_listener.async_stop()
+            self._mqtt_listener = None

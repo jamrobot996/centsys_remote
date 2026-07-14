@@ -169,15 +169,27 @@ automation:
 
 ## About the battery & live telemetry
 
-- **Live open/close status** is real time: when you press open/close, the integration follows the gate's live updates for the duration of the cycle, so the cover animates accurately.
-- **Battery voltage and similar deep diagnostics** come from a heavier check that briefly wakes the operator, so they refresh on a **slower schedule (about every 15 minutes)**, not every few seconds. After first setup the **battery voltage may show *unknown* until the first telemetry cycle completes** — this is normal. It will populate shortly.
+- **Live open/close status** is near-real-time: a persistent MQTT connection streams the gate's status continuously (~1 msg/sec while moving), so the cover animates accurately — regardless of whether *you* triggered the gate or someone used the physical remote or the app.
+- **Battery voltage and similar deep diagnostics** are included in every MQTT telemetry frame and refresh at the same cadence as the live status (every ~15 seconds when the gate is awake). After first setup the **battery voltage may show *unknown* until the first telemetry cycle completes** — this is normal. It will populate shortly.
 - Battery is reported as **voltage** (e.g. `13.4 V`) rather than a percentage, because that's the trustworthy value the operator provides. A reading around 13–14 V typically means the operator is on mains with a healthy battery.
 
 ---
 
 ## Enabling debug logging
 
-If something isn't working, debug logs make it much easier to help. Add this to your `configuration.yaml`, then restart Home Assistant:
+### Option 1 — Dedicated debug log file (recommended)
+
+The integration has a built-in option to write debug output to a dedicated file — **`Centsys_cloud_logs.txt`** in your HA config directory — without enabling debug for the entire HA instance.
+
+1. Go to **Settings → Devices & Services → CenSys Gate Remote → Configure**.
+2. Toggle **Enable debug file logging** on.
+3. Reproduce the issue, then find the log at `<config>/Centsys_cloud_logs.txt`.
+
+This is the easiest way to capture detailed MQTT and telemetry logs for a bug report.
+
+### Option 2 — HA-wide debug logging
+
+If you prefer, add this to your `configuration.yaml`, then restart Home Assistant:
 
 ```yaml
 logger:
@@ -192,6 +204,53 @@ To turn debug logging back off, remove those lines and restart, or run the **Log
 
 ---
 
+## Advanced automation examples (optional)
+
+These are *optional* examples — they are **not required** for the integration to work. They show how to build richer automations using the gate's state.
+
+### Audio alert when the gate opens (Browser Mod)
+
+If you use [Browser Mod](https://github.com/thomasloven/hass-browser_mod), you can play an audio alert on a wall-mounted tablet or browser when the gate opens:
+
+```yaml
+automation:
+  - alias: Gate open audio alert
+    triggers:
+      - trigger: state
+        entity_id: cover.d5_evo_smart   # use your gate's entity id
+        to: "open"
+    actions:
+      - action: browser_mod.navigate
+        data:
+          browser_id: "your-tablet-browser-id"
+          path: /local/sounds/gate_alert.mp3
+```
+
+### iOS critical push notification
+
+Send a critical notification (bypasses Do Not Disturb) to your iPhone when the gate has been open for more than 10 minutes:
+
+```yaml
+automation:
+  - alias: Gate left open — critical push
+    triggers:
+      - trigger: state
+        entity_id: cover.d5_evo_smart   # use your gate's entity id
+        to: "open"
+        for: "00:10:00"
+    actions:
+      - action: notify.mobile_app_your_iphone
+        data:
+          title: "🚨 Gate left open"
+          message: "The gate has been open for 10 minutes."
+          data:
+            push:
+              sound:
+                name: default
+                critical: 1
+                volume: 1.0
+```
+
 ## Troubleshooting
 
 - **"CenSys Gate Remote" doesn't appear in Add Integration.** Make sure the files are at `config/custom_components/centsys_remote/` (with `manifest.json` directly inside) and that you did a **full restart**. Clear your browser cache if needed.
@@ -199,7 +258,7 @@ To turn debug logging back off, remove those lines and restart, or run the **Log
 - **A notification says "no gates linked" / the device has no entities.** Login worked, but no operator has your number added as a **remote user**. Open the official MyCentsys Remote app with the same number — if the gate isn't there either, get an admin to add your number as a remote user on the operator (or add/claim the gate to your account). It will then appear here automatically within about a minute — no restart needed. See [Requirements](#requirements).
 - **Gate won't open from HA but works in the app.** Check the operator is **Online** in HA, and that your account still has permission in the app. Enable debug logging and capture what happens when you press open.
 - **Battery voltage stays *unknown*.** Wait for a telemetry cycle (up to ~15 minutes), or restart HA. If it never populates, the operator may have been asleep/offline at each attempt — grab debug logs.
-- **State seems to lag.** Steady-state status refreshes about once a minute; live motion is tracked in real time during an open/close. Brief states between polls are expected to be smoothed by the live follow.
+- **State seems to lag.** Steady-state status refreshes about once a minute via HTTP poll; the persistent MQTT listener provides near-real-time updates between polls. If both are stale, check your HA instance's outbound internet connectivity.
 
 ---
 

@@ -30,6 +30,16 @@
       "already_configured": "This mobile number is already configured."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CenSys Gate Remote Options",
+        "data": {
+          "enable_debug_logging": "Enable debug file logging (writes to Centsys_cloud_logs.txt in the HA config directory)"
+        }
+      }
+    }
+  },
   "entity": {
     "binary_sensor": {
       "online": { "name": "Online" },

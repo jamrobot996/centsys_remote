@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -61,6 +61,13 @@ class CentsysConfigFlow(ConfigFlow, domain=DOMAIN):
     """Two-step flow: collect number -> send OTP, then verify OTP -> store token."""
 
     VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(
+        config_entry: ConfigEntry,
+    ) -> CentsysOptionsFlowHandler:
+        """Get the options flow handler."""
+        return CentsysOptionsFlowHandler(config_entry)
 
     def __init__(self) -> None:
         self._client: CentsysRemoteClient | None = None
@@ -134,4 +141,31 @@ class CentsysConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="otp", data_schema=OTP_SCHEMA, errors=errors
+        )
+
+
+class CentsysOptionsFlowHandler(OptionsFlow):
+    """Options flow for CenSys Gate Remote (debug logging toggle)."""
+
+    def __init__(self, config_entry: ConfigEntry) -> None:
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        "enable_debug_logging",
+                        default=self.config_entry.options.get(
+                            "enable_debug_logging", False
+                        ),
+                    ): bool,
+                }
+            ),
         )
