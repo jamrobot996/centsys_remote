@@ -215,6 +215,32 @@ class CentsysRemoteClient:
 
     # -- low-level request helper -----------------------------------------
 
+    def _redact_url_for_log(self, url: str) -> str:
+        """Redact sensitive query parameter values before logging URLs."""
+        sensitive_keys = {
+            "mobileNumber",
+            "remoteUserNumber",
+            "msisdn",
+            "mobile",
+            "phone",
+            "number",
+        }
+        try:
+            parsed = URL(url)
+            if not parsed.query:
+                return url
+
+            redacted_pairs: list[tuple[str, str]] = []
+            for key, value in parsed.query.items():
+                if key in sensitive_keys:
+                    redacted_pairs.append((key, "***REDACTED***"))
+                else:
+                    redacted_pairs.append((key, value))
+
+            return str(parsed.with_query(redacted_pairs))
+        except Exception:
+            return "<redacted-url>"
+
     async def _request(
         self,
         method: str,
@@ -250,7 +276,7 @@ class CentsysRemoteClient:
             "[%s] -> %s %s\n  req headers: %s\n  json_present: %s\n  data_present: %s",
             op,
             method,
-            url,
+            self._redact_url_for_log(url),
             _redact_headers(headers),
             json_body is not None,
             data is not None,
