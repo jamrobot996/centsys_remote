@@ -266,16 +266,26 @@ class CentsysRemoteClient:
         if content_type:
             headers["Content-Type"] = content_type
 
-        # We append a CodeQL bypass comment here because static analysis flags the data flow
-        # of 'json_body' into the logger, without recognizing that _sanitize_for_log neutralizes it.
+        # To permanently satisfy GitHub CodeQL's static data-flow analysis for CWE-117 and 
+        # Sensitive Data Logging, we extract only the completely safe structural metadata 
+        # (URL path, header keys, payload keys) so no tainted variables flow into the logger.
+        try:
+            safe_url = URL(url).path
+        except Exception:
+            safe_url = "<url>"
+            
+        safe_req_headers = list(headers.keys()) if headers else []
+        safe_json = list(json_body.keys()) if isinstance(json_body, dict) else bool(json_body)
+        safe_data = "present" if data else "none"
+
         _LOGGER.debug(
-            "[%s] -> %s %s | req headers: %s | json: %s | data: %s",
-            _sanitize_for_log(op), 
-            _sanitize_for_log(method), 
-            _sanitize_for_log(url),  # codeql[py/clear-text-logging-sensitive-data]
-            _sanitize_for_log(_redact_headers(headers)),  # codeql[py/clear-text-logging-sensitive-data]
-            _sanitize_for_log(json_body),  # codeql[py/clear-text-logging-sensitive-data]
-            _sanitize_for_log(data),  # codeql[py/clear-text-logging-sensitive-data]
+            "[%s] -> %s %s | req headers: %s | json keys: %s | data: %s",
+            op, 
+            method, 
+            safe_url, 
+            safe_req_headers, 
+            safe_json, 
+            safe_data,
         )
         try:
             async with self._session.request(
@@ -296,12 +306,13 @@ class CentsysRemoteClient:
             _LOGGER.warning("[%s] unexpected error: %r", op, err)
             raise CentsysError(f"{op}: {err!r}") from err
 
+        safe_resp_headers = list(resp_headers.keys()) if resp_headers else []
         _LOGGER.debug(
-            "[%s] <- HTTP %s | resp headers: %s | body: %s",
-            _sanitize_for_log(op), 
+            "[%s] <- HTTP %s | resp headers: %s | body length: %s",
+            op, 
             status, 
-            _sanitize_for_log(resp_headers),  # codeql[py/clear-text-logging-sensitive-data]
-            _sanitize_for_log(text),  # codeql[py/clear-text-logging-sensitive-data]
+            safe_resp_headers, 
+            len(text) if text else 0,
         )
 
         if status not in expected_status:
