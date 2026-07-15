@@ -142,49 +142,7 @@ def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
     return redacted
 
 
-def _sanitize_for_log(value: Any) -> str:
-    """Redact sensitive fields and neutralize CRLF for safe logging (CWE-117)."""
-    if value is None:
-        return "None"
-        
-    sensitive_tokens = (
-        "mobile",
-        "otp",
-        "token",
-        "authorization",
-        "password",
-        "secret",
-        "bearer",
-    )
-    
-    def _redact(obj: Any) -> Any:
-        if isinstance(obj, dict):
-            return {
-                k: "***REDACTED***" if any(t in str(k).lower() for t in sensitive_tokens) else _redact(v) 
-                for k, v in obj.items()
-            }
-        if isinstance(obj, list):
-            return [_redact(i) for i in obj]
-        return obj
-        
-    if isinstance(value, (dict, list)):
-        redacted_obj = _redact(value)
-        try:
-            val_str = json.dumps(redacted_obj)
-        except Exception:
-            val_str = str(redacted_obj)
-    else:
-        val_str = str(value)
-        
-    # Redact URL-encoded or raw string parameters
-    val_str = re.sub(
-        r"(?i)(mobile|otp|token|authorization|password|secret|bearer)=([^&]+)", 
-        r"\1=***REDACTED***", 
-        val_str
-    )
-    
-    # Neutralize CRLF sequences to prevent Log Injection (CWE-117)
-    return val_str.replace("\n", "\\n").replace("\r", "\\r")
+
 
 
 class CentsysRemoteClient:

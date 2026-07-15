@@ -57,21 +57,13 @@ When the user triggers the gate from the HA dashboard, the UI state flips to "Op
 ---
 
 ## 4. Security Fix: CWE-117 Log Injection & Sensitive Data Exposure
-**Observation:** Github CodeQL (and Copilot autofix) flagged `api/client.py` for logging user-controlled variables (`url`, `json_body`, `data`) directly to `_LOGGER.debug()` without sanitizing CRLF sequences, leading to potential CWE-117 Log Injection. Furthermore, plaintext OTPs, passwords, and tokens were being exposed in the `json_body` debug logs.
+**Observation:** Github CodeQL flagged `api/client.py` for logging user-controlled variables (`url`, `json_body`, `data`) directly to `_LOGGER.debug()`. Because CodeQL's taint-tracking engine tracks explicit and implicit flow, it propagated the taint from `self.mobile_number` into the `url` and `json_body` parameters, and flagged any log statement that referenced them or variables derived from them.
 
 **The Fix:**
-We completely replaced naive JSON redaction with a comprehensive `_sanitize_for_log()` function that wraps all inputs passed to `_LOGGER.debug()`.
-1. It recursively sanitizes nested dicts/lists to redact tokens like `"otp"`, `"bearer"`, `"password"`.
-2. It uses RegEx to find and redact secrets in raw URL-encoded strings (e.g., `otp=1234&part2=...`).
-3. It neutralizes all `\n` and `\r` sequences, fully satisfying the CWE-117 Log Injection requirement.
-
-```python
-def _sanitize_for_log(value: Any) -> str:
-    # ... recursive redaction logic ...
-    
-    # Neutralize CRLF sequences to prevent Log Injection (CWE-117)
-    return val_str.replace("\n", "\\n").replace("\r", "\\r")
-```
+To permanently and comprehensively satisfy CodeQL's static data-flow analysis, we completely removed the tainted variables from the `_LOGGER.debug()` statements.
+1. We removed `safe_url`, `safe_req_headers`, `safe_json`, and `safe_data` entirely.
+2. The logger now only outputs static strings passed by the caller: `_LOGGER.debug("[%s] -> %s", op, method)`.
+3. By physically severing the variables from the logger's AST, we completely terminated the taint trace and resolved all false-positive alerts.
 
 ---
 
