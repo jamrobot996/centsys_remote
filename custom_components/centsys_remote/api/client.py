@@ -267,17 +267,12 @@ class CentsysRemoteClient:
             headers["Content-Type"] = content_type
 
         # To permanently satisfy GitHub CodeQL's static data-flow analysis for CWE-117 and 
-        # Sensitive Data Logging, we extract only the completely safe URL path.
-        try:
-            safe_url = URL(url).path
-        except Exception:
-            safe_url = "<url>"
-
+        # Sensitive Data Logging, we completely avoid logging the URL since the URL 
+        # string itself is tainted by query parameters like mobileNumber.
         _LOGGER.debug(
-            "[%s] -> %s %s",
+            "[%s] -> %s",
             op, 
             method, 
-            safe_url, 
         )
         try:
             async with self._session.request(
