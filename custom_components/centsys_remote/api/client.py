@@ -268,18 +268,18 @@ class CentsysRemoteClient:
 
         # To permanently satisfy GitHub CodeQL's static data-flow analysis for CWE-117 and 
         # Sensitive Data Logging, we extract only the completely safe structural metadata 
-        # (URL path, header keys, payload keys) so no tainted variables flow into the logger.
+        # using boolean branching so no tainted variables flow into the logger AST.
         try:
             safe_url = URL(url).path
         except Exception:
             safe_url = "<url>"
             
-        safe_req_headers = list(headers.keys()) if headers else []
-        safe_json = list(json_body.keys()) if isinstance(json_body, dict) else bool(json_body)
+        safe_req_headers = "present" if headers else "none"
+        safe_json = "present" if json_body else "none"
         safe_data = "present" if data else "none"
 
         _LOGGER.debug(
-            "[%s] -> %s %s | req headers: %s | json keys: %s | data: %s",
+            "[%s] -> %s %s | req headers: %s | json: %s | data: %s",
             op, 
             method, 
             safe_url, 
@@ -306,13 +306,13 @@ class CentsysRemoteClient:
             _LOGGER.warning("[%s] unexpected error: %r", op, err)
             raise CentsysError(f"{op}: {err!r}") from err
 
-        safe_resp_headers = list(resp_headers.keys()) if resp_headers else []
+        safe_resp_headers = "present" if resp_headers else "none"
         _LOGGER.debug(
-            "[%s] <- HTTP %s | resp headers: %s | body length: %s",
+            "[%s] <- HTTP %s | resp headers: %s | body present: %s",
             op, 
             status, 
             safe_resp_headers, 
-            len(text) if text else 0,
+            "yes" if text else "no",
         )
 
         if status not in expected_status:
